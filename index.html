@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mood Booster</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: Georgia, 'Times New Roman', serif;
+      background: #fff;
+      color: #222;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 600px;
+      text-align: center;
+    }
+
+    .quote-text {
+      font-size: 1.5rem;
+      line-height: 1.7;
+      margin-bottom: 1.5rem;
+      transition: opacity 0.3s ease;
+    }
+
+    .quote-author {
+      font-size: 0.95rem;
+      color: #888;
+      margin-bottom: 3rem;
+      font-style: italic;
+      transition: opacity 0.3s ease;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.6rem 1.8rem;
+      background: #fff;
+      color: #222;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    button:hover {
+      border-color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <p class="quote-text" id="quote-text"></p>
+    <p class="quote-author" id="quote-author"></p>
+    <button id="next-btn">Another</button>
+  </div>
+
+  <script>
+    let quotes = [];
+    let deck = [];
+
+    async function loadQuotes() {
+      const res = await fetch('quotes.json');
+      quotes = await res.json();
+      shuffle();
+      showNext();
+    }
+
+    function shuffle() {
+      deck = [...Array(quotes.length).keys()];
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+    }
+
+    function showNext() {
+      if (quotes.length === 0) return;
+      if (deck.length === 0) shuffle();
+
+      const q = quotes[deck.pop()];
+      const textEl = document.getElementById('quote-text');
+      const authorEl = document.getElementById('quote-author');
+
+      textEl.style.opacity = 0;
+      authorEl.style.opacity = 0;
+
+      setTimeout(() => {
+        textEl.textContent = q.text;
+        authorEl.textContent = q.author ? `— ${q.author}` : '';
+        textEl.style.opacity = 1;
+        authorEl.style.opacity = 1;
+      }, 200);
+    }
+
+    document.getElementById('next-btn').addEventListener('click', showNext);
+    loadQuotes();
+  </script>
+</body>
+</html>
