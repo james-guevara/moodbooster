@@ -34,9 +34,28 @@
     .quote-author {
       font-size: 0.95rem;
       color: #888;
-      margin-bottom: 3rem;
+      margin-bottom: 2rem;
       font-style: italic;
       transition: opacity 0.3s ease;
+    }
+
+    .stars {
+      display: inline-flex;
+      gap: 0.2rem;
+      margin-bottom: 1.5rem;
+      user-select: none;
+    }
+
+    .star {
+      font-size: 1.6rem;
+      color: #ddd;
+      cursor: pointer;
+      transition: color 0.1s;
+      line-height: 1;
+    }
+
+    .star.lit {
+      color: #f5b301;
     }
 
     button {
@@ -54,39 +73,127 @@
     button:hover {
       border-color: #888;
     }
+
+    .footer {
+      position: fixed;
+      bottom: 1rem;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+
+    .footer a {
+      color: #aaa;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .footer a:hover {
+      color: #555;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <p class="quote-text" id="quote-text"></p>
     <p class="quote-author" id="quote-author"></p>
-    <button id="next-btn">Another</button>
+    <div class="stars" id="stars"
+         role="radiogroup" aria-label="Rate this quote">
+      <span class="star" data-value="1" role="radio" tabindex="0" aria-label="1 star">★</span>
+      <span class="star" data-value="2" role="radio" tabindex="0" aria-label="2 stars">★</span>
+      <span class="star" data-value="3" role="radio" tabindex="0" aria-label="3 stars">★</span>
+      <span class="star" data-value="4" role="radio" tabindex="0" aria-label="4 stars">★</span>
+      <span class="star" data-value="5" role="radio" tabindex="0" aria-label="5 stars">★</span>
+    </div>
+    <div>
+      <button id="next-btn">Another</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span id="progress"></span>
+    <a id="export-link">Export ratings</a>
   </div>
 
   <script>
+    const STORAGE_KEY = 'moodbooster-ratings';
+
     let quotes = [];
-    let deck = [];
+    let currentIdx = -1;
+    let lastIdx = -1;
 
     async function loadQuotes() {
       const res = await fetch('quotes.json');
-      quotes = await res.json();
-      shuffle();
+      const raw = await res.json();
+      const stored = loadStored();
+      quotes = raw.map(q => ({
+        text: q.text,
+        author: q.author,
+        rating: stored[q.text] ?? q.rating ?? 0,
+      }));
+      updateProgress();
       showNext();
     }
 
-    function shuffle() {
-      deck = [...Array(quotes.length).keys()];
-      for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
+    function loadStored() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+      } catch {
+        return {};
       }
     }
 
-    function showNext() {
-      if (quotes.length === 0) return;
-      if (deck.length === 0) shuffle();
+    function saveRating(quote) {
+      const stored = loadStored();
+      if (quote.rating > 0) {
+        stored[quote.text] = quote.rating;
+      } else {
+        delete stored[quote.text];
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    }
 
-      const q = quotes[deck.pop()];
+    function pickNext() {
+      if (quotes.length === 0) return -1;
+
+      const unrated = [];
+      for (let i = 0; i < quotes.length; i++) {
+        if (quotes[i].rating === 0) unrated.push(i);
+      }
+
+      let candidate;
+      if (unrated.length > 0) {
+        candidate = unrated[Math.floor(Math.random() * unrated.length)];
+        if (candidate === lastIdx && unrated.length > 1) {
+          candidate = unrated[Math.floor(Math.random() * unrated.length)];
+        }
+      } else {
+        const totalWeight = quotes.reduce((s, q) => s + q.rating, 0);
+        if (totalWeight === 0) return -1;
+        let r = Math.random() * totalWeight;
+        candidate = 0;
+        for (let i = 0; i < quotes.length; i++) {
+          r -= quotes[i].rating;
+          if (r <= 0) { candidate = i; break; }
+        }
+        if (candidate === lastIdx && quotes.length > 1) {
+          return pickNext();
+        }
+      }
+      return candidate;
+    }
+
+    function showNext() {
+      const idx = pickNext();
+      if (idx < 0) return;
+      lastIdx = currentIdx;
+      currentIdx = idx;
+      const q = quotes[idx];
+
       const textEl = document.getElementById('quote-text');
       const authorEl = document.getElementById('quote-author');
 
@@ -98,10 +205,74 @@
         authorEl.textContent = q.author ? `— ${q.author}` : '';
         textEl.style.opacity = 1;
         authorEl.style.opacity = 1;
+        renderStars(q.rating);
       }, 200);
     }
 
+    function renderStars(rating) {
+      const stars = document.querySelectorAll('#stars .star');
+      stars.forEach(s => {
+        const v = parseInt(s.dataset.value, 10);
+        s.classList.toggle('lit', v <= rating);
+        s.setAttribute('aria-checked', v === rating);
+      });
+    }
+
+    function setRating(value) {
+      if (currentIdx < 0) return;
+      const q = quotes[currentIdx];
+      q.rating = value;
+      saveRating(q);
+      renderStars(value);
+      updateProgress();
+      setTimeout(showNext, 250);
+    }
+
+    function updateProgress() {
+      const rated = quotes.filter(q => q.rating > 0).length;
+      document.getElementById('progress').textContent =
+        `${rated} / ${quotes.length} rated`;
+    }
+
+    function exportRatings() {
+      const out = quotes.map(q => {
+        const entry = { text: q.text };
+        if (q.author) entry.author = q.author;
+        if (q.rating > 0) entry.rating = q.rating;
+        return entry;
+      });
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'quotes.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    document.querySelectorAll('#stars .star').forEach(star => {
+      const v = parseInt(star.dataset.value, 10);
+      star.addEventListener('click', () => setRating(v));
+      star.addEventListener('mouseenter', () => {
+        document.querySelectorAll('#stars .star').forEach(s => {
+          s.classList.toggle('lit', parseInt(s.dataset.value, 10) <= v);
+        });
+      });
+      star.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setRating(v);
+        }
+      });
+    });
+
+    document.getElementById('stars').addEventListener('mouseleave', () => {
+      if (currentIdx >= 0) renderStars(quotes[currentIdx].rating);
+    });
+
     document.getElementById('next-btn').addEventListener('click', showNext);
+    document.getElementById('export-link').addEventListener('click', exportRatings);
+
     loadQuotes();
   </script>
 </body>
